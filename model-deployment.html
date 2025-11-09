@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qwen 7B 本地模型交互（智能对话版）</title>
+    <style>
+        :root {
+            --primary: #5B6CF6;
+            --primary-light: #7886F5;
+            --secondary: #10B981;
+            --bg: #F5F7FA;
+            --chat-bg: #FFFFFF;
+            --user-bg: #E6F4FF;
+            --ai-bg: #F9FAFB;
+            --text: #1D2939;
+            --text-light: #667085;
+            --border: #E5E7EB;
+            --shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            --radius: 16px;
+            --radius-sm: 10px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Inter", "Microsoft YaHei", Arial, sans-serif;
+        }
+
+        body {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: var(--bg);
+            color: var(--text);
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--primary);
+            margin-bottom: 30px;
+            font-size: 28px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        #chat-container {
+            height: 600px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            overflow-y: auto;
+            background-color: var(--chat-bg);
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+            scrollbar-width: thin;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #chat-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #chat-container::-webkit-scrollbar-thumb {
+            background-color: var(--border);
+            border-radius: 3px;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 16px 20px;
+            border-radius: var(--radius-sm);
+            max-width: 80%;
+            line-height: 1.8; /* 增加行间距，提升可读性 */
+            font-size: 16px;
+            position: relative;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .message .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .message .content {
+            flex: 1;
+            white-space: pre-line; /* 核心：保留模型返回的换行符 \n */
+            word-break: break-word; /* 长单词/链接自动换行 */
+        }
+
+        /* 分点样式优化：增加缩进，提升层次感 */
+        .message .content ul,
+        .message .content ol {
+            margin-left: 20px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+        }
+
+        .message .content li {
+            margin: 4px 0;
+        }
+
+        .user {
+            background-color: var(--user-bg);
+            color: var(--text);
+            margin-left: auto;
+            border-top-right-radius: 6px;
+            box-shadow: 0 2px 4px rgba(91, 108, 246, 0.1);
+        }
+
+        .user .avatar {
+            background-color: #4F46E5;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .ai {
+            background-color: var(--ai-bg);
+            color: var(--text);
+            margin-right: auto;
+            border-top-left-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .ai .avatar {
+            background-color: #10B981;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .loading {
+            color: var(--text-light);
+            font-style: italic;
+            text-align: center;
+            margin: 10px 0;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loading .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(91, 108, 246, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--primary);
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #input-container {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            background-color: var(--chat-bg);
+            padding: 10px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        #question {
+            flex: 1;
+            padding: 14px 18px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s;
+            background-color: var(--bg);
+            min-height: 56px;
+            resize: vertical;
+        }
+
+        #question:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(91, 108, 246, 0.1);
+        }
+
+        #submit {
+            padding: 14px 28px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(91, 108, 246, 0.2);
+            align-self: flex-start;
+        }
+
+        #submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(91, 108, 246, 0.3);
+        }
+
+        #submit:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(91, 108, 246, 0.2);
+        }
+
+        #submit:disabled {
+            background: var(--border);
+            color: var(--text-light);
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+
+        /* 代码块样式（可选，提升代码可读性） */
+        .message .content pre {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 8px 0;
+            overflow-x: auto;
+            font-family: "Consolas", monospace;
+            font-size: 14px;
+        }
+
+        .message .content code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: "Consolas", monospace;
+            font-size: 14px;
+        }
+
+        /* 响应式适配手机 */
+        @media (max-width: 600px) {
+            #chat-container {
+                height: 450px;
+                padding: 15px;
+            }
+            .message {
+                font-size: 14px;
+                padding: 12px 16px;
+                max-width: 90%;
+            }
+            .message .avatar {
+                width: 30px;
+                height: 30px;
+            }
+            #input-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+            #question, #submit {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Qwen 7B 本地模型交互（智能对话版）</h1>
+    <div id="chat-container"></div>
+    <div id="input-container">
+        <input type="text" id="question" placeholder="输入你的问题...（例如：你好，介绍一下自己）">
+        <button id="submit">发送</button>
+    </div>
+
+    <script>
+        const OLLAMA_API = "/api/chat";
+        const chatContainer = document.getElementById("chat-container");
+        const questionInput = document.getElementById("question");
+        const submitBtn = document.getElementById("submit");
+
+        // 唯一用户标识（可自定义，确保同一用户不变即可）
+        const USER_ID = "local_user_" + Date.now(); 
+
+        async function sendQuestion(question) {
+            addMessage("user", question);
+            questionInput.value = "";
+            submitBtn.disabled = true;
+
+            const loadingDiv = document.createElement("div");
+            loadingDiv.className = "loading";
+            loadingDiv.innerHTML = '<div class="spinner"></div>模型思考中...';
+            chatContainer.appendChild(loadingDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            try {
+                const response = await fetch(OLLAMA_API, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        user_id: USER_ID, // 关键：传入用户标识，实现连续对话
+                        model: "qwen:7b-chat-q4_0", 
+                        messages: [{ role: "user", content: question }],
+                        stream: true, 
+                        temperature: 0.7, 
+                        max_tokens: 2048 
+                    })
+                });
+
+                if (!response.ok) throw new Error(`API 响应错误：${response.status}`);
+
+                loadingDiv.remove();
+                const aiMessageDiv = document.createElement("div");
+                aiMessageDiv.className = "message ai";
+                aiMessageDiv.innerHTML = '<div class="avatar">AI</div><div class="content"></div>';
+                chatContainer.appendChild(aiMessageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let aiAnswer = "";
+                const contentEl = aiMessageDiv.querySelector(".content");
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunks = decoder.decode(value).split("\n").filter(chunk => chunk.trim());
+                    for (const chunk of chunks) {
+                        try {
+                            const data = JSON.parse(chunk);
+                            if (data.message?.content) {
+                                aiAnswer += data.message.content;
+                                // 用 innerHTML 而非 textContent，支持模型返回的 HTML 格式（如列表标签）
+                                contentEl.innerHTML = aiAnswer;
+                                chatContainer.scrollTop = chatContainer.scrollHeight;
+                            }
+                        } catch (e) {}
+                    }
+                }
+
+                if (!aiAnswer) contentEl.textContent = "未获取到回答，请重试";
+            } catch (error) {
+                loadingDiv.remove();
+                addMessage("ai", `出错了：${error.message}\n请检查 Ollama 服务是否正常运行`);
+            } finally {
+                submitBtn.disabled = false;
+            }
+        }
+
+        function addMessage(role, content) {
+            const div = document.createElement("div");
+            div.className = `message ${role}`;
+            div.innerHTML = role === "user" 
+                ? `<div class="avatar">你</div><div class="content">${content}</div>` 
+                : `<div class="avatar">AI</div><div class="content">${content}</div>`;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        submitBtn.addEventListener("click", () => {
+            const question = questionInput.value.trim();
+            if (question) sendQuestion(question);
+        });
+
+        questionInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && questionInput.value.trim()) {
+                sendQuestion(questionInput.value.trim());
+            }
+        });
+    </script>
+</body>
+</html>
