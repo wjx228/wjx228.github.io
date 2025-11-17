@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VSCode代码实时分析仪表板</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            min-width: 150px;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card .number {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .stat-card .label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .panel h2 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            color: #444;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #recentAnalyses {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .analysis-item {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .analysis-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            background: #fff;
+        }
+
+        .analysis-item.active {
+            border-left-color: #764ba2;
+            background: #fff3cd;
+        }
+
+        .analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .filename {
+            font-weight: bold;
+            color: #444;
+            font-size: 1.1em;
+        }
+
+        .timestamp {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .trigger-badge {
+            background: #e9ecef;
+            color: #495057;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .analysis-preview {
+            color: #666;
+            line-height: 1.5;
+            margin: 10px 0;
+            max-height: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+        }
+
+        .analysis-detail {
+            display: none;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+        }
+
+        .analysis-detail.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .detail-content {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.95em;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-pending { background: #ffc107; animation: pulse 1.5s infinite; }
+        .status-analyzing { background: #17a2b8; animation: pulse 1s infinite; }
+        .status-completed { background: #28a745; }
+        .status-failed { background: #dc3545; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: #e9ecef;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+        }
+
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .filter-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        #statusDot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #28a745;
+        }
+
+        #statusDot.disconnected {
+            background: #dc3545;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .action-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+        }
+
+        .action-btn.primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .action-btn.secondary {
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-style: italic;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .header {
+                flex-direction: column;
+                text-align: center;
+                gap: 20px;
+            }
+            
+            .stats {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>🤖 VSCode代码实时分析系统</h1>
+                <p>自动分析VSCode中运行的代码，提供AI见解和优化建议</p>
+                <div class="connection-status">
+                    <div id="statusDot"></div>
+                    <span id="statusText">正在连接...</span>
+                    <span id="userIdDisplay"></span>
+                </div>
+            </div>
+            <div class="stats">
+                <div class="stat-card" onclick="refreshData()">
+                    <div id="totalAnalyses" class="number">0</div>
+                    <div class="label">总分析次数</div>
+                </div>
+                <div class="stat-card" onclick="showRecentAnalyses()">
+                    <div id="realtimeAnalyses" class="number">0</div>
+                    <div class="label">实时分析</div>
+                </div>
+                <div class="stat-card" onclick="showRuntimeAnalyses()">
+                    <div id="runtimeAnalyses" class="number">0</div>
+                    <div class="label">运行时分析</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="panel">
+                <h2><span>📋</span> 最近分析记录</h2>
+                <div class="filters">
+                    <button class="filter-btn active" onclick="filterAnalyses('all')">全部</button>
+                    <button class="filter-btn" onclick="filterAnalyses('save')">保存</button>
+                    <button class="filter-btn" onclick="filterAnalyses('run')">运行</button>
+                    <button class="filter-btn" onclick="filterAnalyses('test')">测试</button>
+                    <button class="filter-btn" onclick="filterAnalyses('manual')">手动</button>
+                </div>
+                <div id="recentAnalyses">
+                    <div class="loading">正在加载分析记录...</div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2><span>🔍</span> 分析详情</h2>
+                <div id="selectedAnalysis">
+                    <p style="color: #666; text-align: center; padding: 40px;">
+                        请从左侧选择一个分析记录查看详情
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let currentUser = null;
+        let currentAnalysisId = null;
+        let refreshInterval = null;
+        let allAnalyses = [];
+        let currentFilter = 'all';
+
+        // 从URL获取用户ID
+        function getUserIdFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('user_id');
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            currentUser = getUserIdFromUrl();
+            
+            if (!currentUser) {
+                currentUser = prompt('请输入用户ID:', `user_${Date.now()}`);
+                if (!currentUser) {
+                    currentUser = `user_${Date.now()}`;
+                }
+                // 更新URL但不刷新页面
+                const newUrl = `${window.location.pathname}?user_id=${currentUser}`;
+                window.history.replaceState({}, '', newUrl);
+            }
+            
+            document.getElementById('userIdDisplay').textContent = `用户: ${currentUser}`;
+            
+            // 检查连接状态
+            checkConnection();
+            
+            // 加载分析记录
+            loadRecentAnalyses();
+            loadRuntimeAnalyses();
+            
+            // 设置自动刷新
+            refreshInterval = setInterval(refreshData, 5000);
+            
+            // 设置键盘快捷键
+            setupKeyboardShortcuts();
+        });
+
+        // 检查连接状态
+        async function checkConnection() {
+            try {
+                const response = await fetch('/api/health');
+                if (response.ok) {
+                    document.getElementById('statusText').textContent = '已连接到云平台';
+                    document.getElementById('statusDot').style.backgroundColor = '#28a745';
+                    return true;
+                } else {
+                    document.getElementById('statusText').textContent = '连接异常';
+                    document.getElementById('statusDot').style.backgroundColor = '#dc3545';
+                    return false;
+                }
+            } catch (error) {
+                document.getElementById('statusText').textContent = '连接断开';
+                document.getElementById('statusDot').style.backgroundColor = '#dc3545';
+                return false;
+            }
+        }
+
+        // 刷新所有数据
+        async function refreshData() {
+            const connected = await checkConnection();
+            if (connected) {
+                loadRecentAnalyses();
+                loadRuntimeAnalyses();
+            }
+        }
+
+        // 加载最近的分析记录
+        async function loadRecentAnalyses() {
+            try {
+                const response = await fetch(`/api/vscode/recent_analyses?user_id=${currentUser}&limit=20`);
+                if (!response.ok) throw new Error('加载失败');
+                
+                const data = await response.json();
+                allAnalyses = data.analyses;
+                
+                // 更新统计信息
+                document.getElementById('totalAnalyses').textContent = data.count;
+                document.getElementById('realtimeAnalyses').textContent = 
+                    allAnalyses.filter(a => isRecent(a.timestamp, 300)).length; // 5分钟内的算实时
+                
+                // 显示分析列表
+                displayAnalyses(allAnalyses);
+                
+            } catch (error) {
+                console.error('加载分析记录失败:', error);
+                document.getElementById('recentAnalyses').innerHTML = 
+                    '<div class="error">加载分析记录失败，请检查连接</div>';
+            }
+        }
+
+        // 加载运行时分析记录
+        async function loadRuntimeAnalyses() {
+            try {
+                const response = await fetch(`/api/vscode/runtime_analyses?user_id=${currentUser}&limit=5`);
+                if (!response.ok) throw new Error('加载失败');
+                
+                const data = await response.json();
+                document.getElementById('runtimeAnalyses').textContent = data.count;
+                
+            } catch (error) {
+                console.error('加载运行时分析失败:', error);
+            }
+        }
+
+        // 显示分析列表
+        function displayAnalyses(analyses) {
+            const container = document.getElementById('recentAnalyses');
+            
+            if (analyses.length === 0) {
+                container.innerHTML = '<div class="no-data">暂无分析记录</div>';
+                return;
+            }
+            
+            // 过滤分析记录
+            let filteredAnalyses = analyses;
+            if (currentFilter !== 'all') {
+                filteredAnalyses = analyses.filter(a => a.trigger_type === currentFilter);
+            }
+            
+            if (filteredAnalyses.length === 0) {
+                container.innerHTML = `<div class="no-data">没有${getFilterLabel(currentFilter)}的分析记录</div>`;
+                return;
+            }
+            
+            container.innerHTML = filteredAnalyses.map(analysis => `
+                <div class="analysis-item ${analysis.analysis_id === currentAnalysisId ? 'active' : ''}" 
+                     onclick="selectAnalysis('${analysis.analysis_id}', this)"
+                     data-trigger="${analysis.trigger_type}">
+                    <div class="analysis-header">
+                        <div class="filename">${escapeHtml(analysis.filename || '未命名文件')}</div>
+                        <div class="trigger-badge">${getTriggerLabel(analysis.trigger_type)}</div>
+                    </div>
+                    <div class="timestamp">${formatTimestamp(analysis.timestamp)}</div>
+                    <div class="analysis-preview">${escapeHtml(analysis.analysis_preview || '无预览')}</div>
+                    <div class="status-indicator status-completed"></div>
+                </div>
+            `).join('');
+        }
+
+        // 获取过滤器标签
+        function getFilterLabel(filter) {
+            const labels = {
+                'all': '全部',
+                'save': '保存',
+                'run': '运行',
+                'test': '测试',
+                'manual': '手动'
+            };
+            return labels[filter] || filter;
+        }
+
+        // 选择分析详情
+        async function selectAnalysis(analysisId, element) {
+            currentAnalysisId = analysisId;
+            
+            // 更新选中状态
+            document.querySelectorAll('.analysis-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            element.classList.add('active');
+            
+            try {
+                // 加载分析详情
+                const response = await fetch(`/api/vscode/analysis_detail/${analysisId}`);
+                if (!response.ok) throw new Error('加载详情失败');
+                
+                const detail = await response.json();
+                displayAnalysisDetail(detail);
+                
+            } catch (error) {
+                console.error('加载分析详情失败:', error);
+                document.getElementById('selectedAnalysis').innerHTML = 
+                    '<div class="error">加载分析详情失败</div>';
+            }
+        }
+
+        // 显示分析详情
+        function displayAnalysisDetail(detail) {
+            const container = document.getElementById('selectedAnalysis');
+            
+            container.innerHTML = `
+                <div class="analysis-header">
+                    <h3>${escapeHtml(detail.filename || '未命名文件')}</h3>
+                    <div class="timestamp">${formatTimestamp(detail.timestamp)}</div>
+                </div>
+                <div class="trigger-badge" style="margin: 10px 0; display: inline-block;">
+                    触发方式: ${getTriggerLabel(detail.trigger_type)}
+                </div>
+                <div>
+                    <strong>状态:</strong> 
+                    <span class="status-indicator status-${detail.status}"></span>
+                    ${getStatusLabel(detail.status)}
+                </div>
+                
+                ${detail.code ? `
+                <div style="margin-top: 20px;">
+                    <h4>📝 原始代码</h4>
+                    <pre class="detail-content">${escapeHtml(detail.code)}</pre>
+                </div>
+                ` : ''}
+                
+                ${detail.analysis ? `
+                <div style="margin-top: 20px;">
+                    <h4>🤖 AI分析结果</h4>
+                    <div class="detail-content">${escapeHtml(detail.analysis)}</div>
+                </div>
+                ` : ''}
+                
+                ${detail.error ? `
+                <div style="margin-top: 20px; background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px;">
+                    <h4>❌ 错误信息</h4>
+                    <pre>${escapeHtml(detail.error)}</pre>
+                </div>
+                ` : ''}
+                
+                <div class="action-buttons">
+                    <button onclick="reanalyze('${detail.analysis_id}')" class="action-btn secondary">
+                        重新分析
+                    </button>
+                    ${detail.code ? `
+                    <button onclick="executeCode('${escapeHtml(detail.code)}')" class="action-btn primary">
+                        执行代码
+                    </button>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        // 过滤分析记录
+        function filterAnalyses(filter) {
+            currentFilter = filter;
+            
+            // 更新按钮状态
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 重新显示分析列表
+            displayAnalyses(allAnalyses);
+        }
+
+        // 显示最近分析
+        function showRecentAnalyses() {
+            filterAnalyses('all');
+        }
+
+        // 显示运行时分析
+        async function showRuntimeAnalyses() {
+            try {
+                const response = await fetch(`/api/vscode/runtime_analyses?user_id=${currentUser}&limit=10`);
+                if (!response.ok) throw new Error('加载失败');
+                
+                const data = await response.json();
+                
+                const container = document.getElementById('recentAnalyses');
+                const analyses = data.runtime_analyses;
+                
+                if (analyses.length === 0) {
+                    container.innerHTML = '<div class="no-data">暂无运行时分析记录</div>';
+                    return;
+                }
+                
+                container.innerHTML = analyses.map(analysis => `
+                    <div class="analysis-item" onclick="selectRuntimeAnalysis('${analysis.analysis_id}')">
+                        <div class="analysis-header">
+                            <div class="filename">运行时分析</div>
+                            <div class="trigger-badge">运行时</div>
+                        </div>
+                        <div class="timestamp">${formatTimestamp(analysis.timestamp)}</div>
+                        <div class="analysis-preview">${escapeHtml(analysis.analysis_preview || '无预览')}</div>
+                        <div class="status-indicator status-completed"></div>
+                    </div>
+                `).join('');
+                
+                // 更新过滤器按钮状态
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                
+            } catch (error) {
+                console.error('显示运行时分析失败:', error);
+            }
+        }
+
+        // 选择运行时分析
+        async function selectRuntimeAnalysis(analysisId) {
+            try {
+                const response = await fetch(`/api/vscode/analysis_detail/${analysisId}`);
+                if (!response.ok) throw new Error('加载详情失败');
+                
+                const detail = await response.json();
+                displayAnalysisDetail(detail);
+                
+            } catch (error) {
+                console.error('加载运行时分析详情失败:', error);
+            }
+        }
+
+        // 重新分析
+        async function reanalyze(analysisId) {
+            try {
+                // 这里可以调用重新分析的API
+                alert('重新分析功能待实现，您可以手动触发新的分析。');
+            } catch (error) {
+                console.error('重新分析失败:', error);
+            }
+        }
+
+        // 执行代码
+        async function executeCode(code) {
+            try {
+                const response = await fetch('/api/code/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code: code,
+                        user_id: currentUser
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`代码已提交执行，执行ID: ${result.execution_id}`);
+                    refreshData(); // 刷新数据
+                } else {
+                    throw new Error('执行请求失败');
+                }
+            } catch (error) {
+                console.error('执行代码失败:', error);
+                alert('执行代码失败，请检查控制台');
+            }
+        }
+
+        // 设置键盘快捷键
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', function(e) {
+                // Ctrl + R 刷新
+                if (e.ctrlKey && e.key === 'r') {
+                    e.preventDefault();
+                    refreshData();
+                }
+                // F5 刷新
+                if (e.key === 'F5') {
+                    e.preventDefault();
+                    refreshData();
+                }
+                // Esc 清空选择
+                if (e.key === 'Escape') {
+                    currentAnalysisId = null;
+                    document.querySelectorAll('.analysis-item').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    document.getElementById('selectedAnalysis').innerHTML = 
+                        '<p style="color: #666; text-align: center; padding: 40px;">请从左侧选择一个分析记录查看详情</p>';
+                }
+            });
+        }
+
+        // 工具函数
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '未知时间';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function isRecent(timestamp, seconds = 300) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = (now - date) / 1000;
+            return diff < seconds;
+        }
+
+        function getTriggerLabel(triggerType) {
+            const labels = {
+                'run': '🚀 运行',
+                'save': '💾 保存',
+                'test': '🧪 测试',
+                'manual': '👆 手动'
+            };
+            return labels[triggerType] || triggerType;
+        }
+
+        function getStatusLabel(status) {
+            const labels = {
+                'pending': '等待分析',
+                'analyzing': '分析中',
+                'completed': '已完成',
+                'failed': '失败'
+            };
+            return labels[status] || status;
+        }
+
+        // 清理函数
+        window.addEventListener('beforeunload', function() {
+            if (refreshInterval) clearInterval(refreshInterval);
+        });
+    </script>
+</body>
+</html>

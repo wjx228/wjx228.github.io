@@ -1,0 +1,8 @@
+// .vscode/extensions.json
+{
+    "recommendations": [
+        "ms-python.python",
+        "ms-vscode.powershell",
+        "wholroyd.jinja"
+    ]
+}

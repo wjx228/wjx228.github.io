@@ -4,306 +4,424 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Qwen 7B 本地模型交互（智能对话版）</title>
-    <style>
-        :root {
-            --primary: #5B6CF6;
-            --primary-light: #7886F5;
-            --secondary: #10B981;
-            --bg: #F5F7FA;
-            --chat-bg: #FFFFFF;
-            --user-bg: #E6F4FF;
-            --ai-bg: #F9FAFB;
-            --text: #1D2939;
-            --text-light: #667085;
-            --border: #E5E7EB;
-            --shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-            --radius: 16px;
-            --radius-sm: 10px;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: "Inter", "Microsoft YaHei", Arial, sans-serif;
-        }
-
-        body {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: var(--bg);
-            color: var(--text);
-        }
-
-        h1 {
-            text-align: center;
-            color: var(--primary);
-            margin-bottom: 30px;
-            font-size: 28px;
-            font-weight: 600;
-            letter-spacing: -0.5px;
-        }
-
-        #chat-container {
-            height: 600px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 20px;
-            overflow-y: auto;
-            background-color: var(--chat-bg);
-            margin-bottom: 20px;
-            box-shadow: var(--shadow);
-            scrollbar-width: thin;
-            display: flex;
-            flex-direction: column;
-        }
-
-        #chat-container::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        #chat-container::-webkit-scrollbar-thumb {
-            background-color: var(--border);
-            border-radius: 3px;
-        }
-
-        .message {
-            margin: 10px 0;
-            padding: 16px 20px;
-            border-radius: var(--radius-sm);
-            max-width: 80%;
-            line-height: 1.8; /* 增加行间距，提升可读性 */
-            font-size: 16px;
-            position: relative;
-            display: flex;
-            align-items: flex-start;
-        }
-
-        .message .avatar {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            margin-right: 12px;
-            flex-shrink: 0;
-        }
-
-        .message .content {
-            flex: 1;
-            white-space: pre-line; /* 核心：保留模型返回的换行符 \n */
-            word-break: break-word; /* 长单词/链接自动换行 */
-        }
-
-        /* 分点样式优化：增加缩进，提升层次感 */
-        .message .content ul,
-        .message .content ol {
-            margin-left: 20px;
-            margin-top: 8px;
-            margin-bottom: 8px;
-        }
-
-        .message .content li {
-            margin: 4px 0;
-        }
-
-        .user {
-            background-color: var(--user-bg);
-            color: var(--text);
-            margin-left: auto;
-            border-top-right-radius: 6px;
-            box-shadow: 0 2px 4px rgba(91, 108, 246, 0.1);
-        }
-
-        .user .avatar {
-            background-color: #4F46E5;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-        }
-
-        .ai {
-            background-color: var(--ai-bg);
-            color: var(--text);
-            margin-right: auto;
-            border-top-left-radius: 6px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        }
-
-        .ai .avatar {
-            background-color: #10B981;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-        }
-
-        .loading {
-            color: var(--text-light);
-            font-style: italic;
-            text-align: center;
-            margin: 10px 0;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .loading .spinner {
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(91, 108, 246, 0.3);
-            border-radius: 50%;
-            border-top-color: var(--primary);
-            animation: spin 1s linear infinite;
-            margin-right: 8px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        #input-container {
-            display: flex;
-            gap: 10px;
-            align-items: flex-start;
-            background-color: var(--chat-bg);
-            padding: 10px;
-            border-radius: var(--radius);
-            box-shadow: var(--shadow);
-        }
-
-        #question {
-            flex: 1;
-            padding: 14px 18px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            font-size: 16px;
-            outline: none;
-            transition: all 0.3s;
-            background-color: var(--bg);
-            min-height: 56px;
-            resize: vertical;
-        }
-
-        #question:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(91, 108, 246, 0.1);
-        }
-
-        #submit {
-            padding: 14px 28px;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-            color: white;
-            border: none;
-            border-radius: var(--radius-sm);
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s;
-            box-shadow: 0 4px 6px rgba(91, 108, 246, 0.2);
-            align-self: flex-start;
-        }
-
-        #submit:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 8px rgba(91, 108, 246, 0.3);
-        }
-
-        #submit:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 4px rgba(91, 108, 246, 0.2);
-        }
-
-        #submit:disabled {
-            background: var(--border);
-            color: var(--text-light);
-            cursor: not-allowed;
-            box-shadow: none;
-            transform: none;
-        }
-
-        /* 代码块样式（可选，提升代码可读性） */
-        .message .content pre {
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            padding: 12px;
-            margin: 8px 0;
-            overflow-x: auto;
-            font-family: "Consolas", monospace;
-            font-size: 14px;
-        }
-
-        .message .content code {
-            background-color: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 4px;
-            font-family: "Consolas", monospace;
-            font-size: 14px;
-        }
-
-        /* 响应式适配手机 */
-        @media (max-width: 600px) {
-            #chat-container {
-                height: 450px;
-                padding: 15px;
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5B6CF6',
+                        'primary-light': '#7886F5',
+                        secondary: '#10B981',
+                        'secondary-light': '#34D399',
+                        code: '#F59E0B',
+                        'code-light': '#FBBF24',
+                        bg: '#F5F7FA',
+                        'chat-bg': '#FFFFFF',
+                        'user-bg': '#E6F4FF',
+                        'ai-bg': '#F9FAFB',
+                        text: '#1D2939',
+                        'text-light': '#667085',
+                        border: '#E5E7EB',
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    boxShadow: {
+                        chat: '0 4px 12px rgba(0, 0, 0, 0.05)',
+                        message: '0 2px 8px rgba(0, 0, 0, 0.07)',
+                        button: '0 4px 14px rgba(91, 108, 246, 0.25)',
+                        'code-button': '0 4px 14px rgba(245, 158, 11, 0.25)',
+                        'dashboard-button': '0 4px 14px rgba(16, 185, 129, 0.25)',
+                    }
+                },
             }
-            .message {
-                font-size: 14px;
-                padding: 12px 16px;
-                max-width: 90%;
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
             }
-            .message .avatar {
-                width: 30px;
-                height: 30px;
+            .message-in {
+                animation: slideInLeft 0.3s ease forwards;
             }
-            #input-container {
-                flex-direction: column;
-                gap: 10px;
+            .message-out {
+                animation: slideInRight 0.3s ease forwards;
             }
-            #question, #submit {
-                width: 100%;
+            .typing-indicator {
+                display: flex;
+                align-items: center;
+                gap: 4px;
             }
+            .typing-indicator span {
+                width: 8px;
+                height: 8px;
+                background-color: #5B6CF6;
+                border-radius: 50%;
+                animation: typing 1.4s infinite ease-in-out both;
+            }
+            .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+            .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        }
+
+        @keyframes slideInLeft {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes typing {
+            0% { transform: scale(0); }
+            40% { transform: scale(1); }
+            80% { transform: scale(0); }
+            100% { transform: scale(0); }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+        }
+        
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        .float {
+            animation: float 3s ease-in-out infinite;
         }
     </style>
 </head>
-<body>
-    <h1>Qwen 7B 本地模型交互（智能对话版）</h1>
-    <div id="chat-container"></div>
-    <div id="input-container">
-        <input type="text" id="question" placeholder="输入你的问题...（例如：你好，介绍一下自己）">
-        <button id="submit">发送</button>
+<body class="bg-gradient-to-br from-bg to-slate-100 min-h-screen font-inter text-text">
+    <!-- 顶部装饰条 -->
+    <div class="h-1 w-full bg-gradient-to-r from-primary via-code to-secondary"></div>
+    
+    <div class="max-w-3xl mx-auto px-4 py-8 md:py-12">
+        <!-- 标题区域 -->
+        <header class="mb-8 text-center relative">
+            <!-- 新增：功能切换按钮区域 -->
+            <div class="absolute right-0 top-0 flex gap-3">
+                <!-- 新增：仪表盘按钮 -->
+                <button id="switchToDashboardBtn" 
+                        class="bg-gradient-to-r from-secondary to-secondary-light hover:from-secondary-light hover:to-secondary text-white px-4 py-2 rounded-xl font-medium shadow-dashboard-button hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center gap-2 float"
+                        title="切换到自动分析仪表盘">
+                    <i class="fa fa-dashboard"></i>
+                    <span class="hidden sm:inline">分析仪表盘</span>
+                </button>
+                
+                <button id="switchToCodeBtn" 
+                        class="bg-gradient-to-r from-code to-code-light hover:from-code-light hover:to-code text-white px-4 py-2 rounded-xl font-medium shadow-code-button hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center gap-2 float"
+                        title="切换到代码分析器">
+                    <i class="fa fa-code"></i>
+                    <span class="hidden sm:inline">代码分析器</span>
+                </button>
+            </div>
+            
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary to-primary-light mb-4 shadow-lg">
+                <i class="fa fa-comments text-white text-2xl"></i>
+            </div>
+            <h1 class="text-[clamp(1.5rem,3vw,2.25rem)] font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary mb-2">
+                Qwen 7B 本地模型交互
+            </h1>
+            <p class="text-text-light text-sm md:text-base max-w-md mx-auto">
+                智能对话版 · 本地部署 · 隐私保护 · 支持连续对话
+            </p>
+            
+            <!-- 新增：快捷指令栏 -->
+            <div class="mt-6 flex flex-wrap justify-center gap-3">
+                <button class="quick-command bg-gradient-to-r from-primary/10 to-primary/5 hover:from-primary/20 hover:to-primary/10 border border-primary/20 text-primary hover:text-primary-light px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 flex items-center gap-2"
+                        data-command="你好！帮我写一个Python函数来计算斐波那契数列。">
+                    <i class="fa fa-python"></i>
+                    Python示例
+                </button>
+                <button class="quick-command bg-gradient-to-r from-secondary/10 to-secondary/5 hover:from-secondary/20 hover:to-secondary/10 border border-secondary/20 text-secondary hover:text-secondary-light px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 flex items-center gap-2"
+                        data-command="用中文解释一下什么是闭包，并给出一个JavaScript的例子。">
+                    <i class="fa fa-js"></i>
+                    JS示例
+                </button>
+                <button class="quick-command bg-gradient-to-r from-code/10 to-code/5 hover:from-code/20 hover:to-code/10 border border-code/20 text-code hover:text-code-light px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 flex items-center gap-2"
+                        data-command="帮我分析一下这段代码的性能问题：[粘贴代码]">
+                    <i class="fa fa-line-chart"></i>
+                    代码分析
+                </button>
+            </div>
+        </header>
+
+        <!-- 聊天容器 -->
+        <div id="chat-container" class="h-[600px] bg-chat-bg rounded-2xl shadow-chat p-4 md:p-6 overflow-y-auto mb-6 transition-all duration-300">
+            <!-- 欢迎消息 -->
+            <div class="flex items-start mb-4 message-in">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-secondary to-secondary-light flex items-center justify-center text-white font-bold shadow-md mr-3">
+                    <i class="fa fa-robot"></i>
+                </div>
+                <div class="bg-ai-bg rounded-2xl rounded-tl-none px-5 py-3 shadow-message max-w-[80%]">
+                    <p>你好！我是基于 Qwen 7B 模型的本地智能助手，有什么可以帮助你的吗？</p>
+                    <p class="mt-2 text-sm text-text-light">
+                        💡 <strong>小提示：</strong> 
+                        <span class="text-code cursor-pointer hover:underline" id="code-analysis-hint">
+                            点击这里或右上角按钮可以进入代码分析器，自动分析代码结构、性能，并在运行时提供智能建议！
+                        </span>
+                        <br>
+                        <span class="text-secondary cursor-pointer hover:underline" id="dashboard-hint">
+                            点击这里或右上角"分析仪表盘"按钮可以查看自动分析结果和数据可视化面板！
+                        </span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="relative group">
+            <div class="absolute inset-0 bg-gradient-to-r from-primary/20 via-code/20 to-secondary/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+            <div class="relative bg-chat-bg rounded-2xl shadow-chat p-3 flex gap-3">
+                <textarea 
+                    id="question" 
+                    placeholder="输入你的问题...（按 Enter 发送，Shift+Enter 换行）" 
+                    class="flex-1 px-4 py-3 rounded-xl bg-bg border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none resize-none transition-all duration-300 min-h-[56px] max-h-[200px]"
+                ></textarea>
+                <div class="flex flex-col gap-2">
+                    <div class="flex gap-2">
+                        <button id="clearBtn" class="bg-slate-100 hover:bg-slate-200 text-text-light px-4 py-3 rounded-xl font-medium transition-all duration-300 flex items-center gap-2">
+                            <i class="fa fa-trash-o"></i>
+                            <span class="hidden sm:inline">清空</span>
+                        </button>
+                        <button id="submit" class="bg-gradient-to-r from-primary to-primary-light hover:from-primary-light hover:to-primary text-white px-6 py-3 rounded-xl font-medium shadow-button hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center gap-2">
+                            <span>发送</span>
+                            <i class="fa fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <!-- 新增：代码检测快捷按钮 -->
+                    <div class="flex gap-2">
+                        <button id="quickCodeBtn" 
+                                class="flex-1 bg-gradient-to-r from-code to-code-light hover:from-code-light hover:to-code text-white px-4 py-2 rounded-xl font-medium shadow-code-button hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2 text-sm">
+                            <i class="fa fa-magic"></i>
+                            代码检测助手
+                        </button>
+                        <button id="quickDashboardBtn" 
+                                class="flex-1 bg-gradient-to-r from-secondary to-secondary-light hover:from-secondary-light hover:to-secondary text-white px-4 py-2 rounded-xl font-medium shadow-dashboard-button hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2 text-sm">
+                            <i class="fa fa-bar-chart"></i>
+                            分析仪表盘
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部信息 -->
+        <div class="mt-6 text-center text-text-light text-xs">
+            <p>模型运行中 · 本地部署 Qwen 7B | 对话历史仅保存在本地 | 支持上下文关联</p>
+            <p class="mt-1">
+                <span class="text-code font-medium">✨ 新功能：</span> 
+                现在可以使用代码分析器检测代码质量、性能问题和提供优化建议！
+                <span class="text-secondary font-medium ml-2">📊 新增：</span>
+                自动分析仪表盘提供可视化数据分析和运行监控！
+            </p>
+        </div>
+    </div>
+
+    <!-- 新增：代码检测模态框 -->
+    <div id="codeModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-full bg-gradient-to-r from-code to-code-light flex items-center justify-center">
+                            <i class="fa fa-code text-white text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-text">代码分析器</h3>
+                            <p class="text-sm text-text-light">智能代码检测与优化</p>
+                        </div>
+                    </div>
+                    <button id="closeModal" class="text-text-light hover:text-text text-xl">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div class="bg-gradient-to-r from-code/5 to-code/10 border border-code/20 rounded-xl p-4">
+                        <h4 class="font-medium text-code mb-2 flex items-center gap-2">
+                            <i class="fa fa-star"></i> 主要功能
+                        </h4>
+                        <ul class="text-sm space-y-1 pl-5">
+                            <li class="flex items-start gap-2">
+                                <i class="fa fa-check text-green-500 mt-1"></i>
+                                <span>自动解析代码结构和用途</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="fa fa-check text-green-500 mt-1"></i>
+                                <span>运行时性能分析和监控</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="fa fa-check text-green-500 mt-1"></i>
+                                <span>代码优劣比较和优化建议</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="fa fa-check text-green-500 mt-1"></i>
+                                <span>安全检测和潜在问题预警</span>
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <div class="flex gap-3">
+                        <button id="openCodeAnalyzer" 
+                                class="flex-1 bg-gradient-to-r from-code to-code-light hover:from-code-light hover:to-code text-white px-4 py-3 rounded-xl font-medium shadow-code-button hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2">
+                            <i class="fa fa-external-link"></i>
+                            打开代码分析器
+                        </button>
+                        <button id="pasteCodeHere" 
+                                class="flex-1 bg-gradient-to-r from-primary to-primary-light hover:from-primary-light hover:to-primary text-white px-4 py-3 rounded-xl font-medium shadow-button hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2">
+                            <i class="fa fa-paste"></i>
+                            粘贴代码分析
+                        </button>
+                    </div>
+                    
+                    <div class="text-center text-xs text-text-light mt-4">
+                        <p>或者直接在聊天框中输入代码进行快速分析</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        const OLLAMA_API = "/api/chat";
+        // 动态获取当前页面的协议、IP/域名、端口
+        const currentOrigin = window.location.origin; 
+        // 拼接Ollama API地址
+        const OLLAMA_API = currentOrigin.replace(':5000', ':11435') + '/api/chat';
+        // 代码分析器页面地址
+        const CODE_ANALYZER_URL = currentOrigin.replace(':5000', ':5000') + '/code_analysis.html';
+        // 自动分析仪表盘页面地址
+        const AUTO_ANALYSIS_DASHBOARD_URL = currentOrigin.replace(':5000', ':5000') + '/auto_analysis_dashboard.html';
+        
         const chatContainer = document.getElementById("chat-container");
         const questionInput = document.getElementById("question");
         const submitBtn = document.getElementById("submit");
+        const clearBtn = document.getElementById("clearBtn");
+        const switchToCodeBtn = document.getElementById("switchToCodeBtn");
+        const switchToDashboardBtn = document.getElementById("switchToDashboardBtn"); // 新增
+        const quickCodeBtn = document.getElementById("quickCodeBtn");
+        const quickDashboardBtn = document.getElementById("quickDashboardBtn"); // 新增
+        const codeModal = document.getElementById("codeModal");
+        const closeModal = document.getElementById("closeModal");
+        const openCodeAnalyzer = document.getElementById("openCodeAnalyzer");
+        const pasteCodeHere = document.getElementById("pasteCodeHere");
+        const codeAnalysisHint = document.getElementById("code-analysis-hint");
+        const dashboardHint = document.getElementById("dashboard-hint"); // 新增
 
-        // 唯一用户标识（可自定义，确保同一用户不变即可）
+        // 关键：保存历史对话记录（用于上下文关联）
+        let chatHistory = [
+            { role: "assistant", content: "你好！我是基于 Qwen 7B 模型的本地智能助手，有什么可以帮助你的吗？\n\n💡 小提示：点击这里或右上角按钮可以进入代码分析器，自动分析代码结构、性能，并在运行时提供智能建议！\n点击这里或右上角\"分析仪表盘\"按钮可以查看自动分析结果和数据可视化面板！" }
+        ];
+
+        // 唯一用户标识
         const USER_ID = "local_user_" + Date.now(); 
 
+        // 滚动到底部
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // 格式化消息内容（处理换行和列表）
+        function formatMessage(content) {
+            return content
+                .replace(/\n\n/g, '<br><br>')
+                .replace(/\n(?=[^\n])/g, '<br>')
+                .replace(/\* (.*?)(?=\n|$)/g, '<li class="ml-4 list-disc">$1</li>')
+                .replace(/(<li.*?<\/li>)/gs, '<ul class="my-2">$1</ul>')
+                .replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-100 p-3 rounded-lg my-2 overflow-x-auto text-sm">$1</pre>')
+                .replace(/`([^`]+)`/g, '<code class="bg-slate-100 px-1 py-0.5 rounded text-sm font-mono">$1</code>');
+        }
+
+        // 添加消息到聊天容器
+        function addMessage(role, content) {
+            const div = document.createElement("div");
+            const formattedContent = formatMessage(content);
+            
+            if (role === "user") {
+                // 用户消息：靠右显示
+                div.className = "flex items-start justify-end mb-4 message-out";
+                div.innerHTML = `
+                    <div class="bg-user-bg rounded-2xl rounded-tr-none px-5 py-3 shadow-message max-w-[80%]">
+                        ${formattedContent}
+                    </div>
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white font-bold shadow-md ml-3">
+                        <i class="fa fa-user"></i>
+                    </div>
+                `;
+            } else {
+                // AI消息：靠左显示
+                div.className = "flex items-start mb-4 message-in";
+                div.innerHTML = `
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-secondary to-secondary-light flex items-center justify-center text-white font-bold shadow-md mr-3">
+                        <i class="fa fa-robot"></i>
+                    </div>
+                    <div class="bg-ai-bg rounded-2xl rounded-tl-none px-5 py-3 shadow-message max-w-[80%]">
+                        ${formattedContent}
+                    </div>
+                `;
+            }
+            
+            chatContainer.appendChild(div);
+            scrollToBottom();
+        }
+
+        // 清空聊天记录
+        function clearChat() {
+            if (confirm("确定要清空所有聊天记录吗？")) {
+                chatContainer.innerHTML = "";
+                chatHistory = [];
+                // 添加初始欢迎消息
+                const welcomeMsg = "你好！我是基于 Qwen 7B 模型的本地智能助手，有什么可以帮助你的吗？\n\n💡 小提示：点击这里或右上角按钮可以进入代码分析器，自动分析代码结构、性能，并在运行时提供智能建议！\n点击这里或右上角\"分析仪表盘\"按钮可以查看自动分析结果和数据可视化面板！";
+                addMessage("assistant", welcomeMsg);
+                chatHistory.push({ role: "assistant", content: welcomeMsg });
+            }
+        }
+
         async function sendQuestion(question) {
+            // 添加用户消息到界面和历史记录
             addMessage("user", question);
+            chatHistory.push({ role: "user", content: question });
+            
             questionInput.value = "";
             submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-70', 'cursor-not-allowed');
+            clearBtn.disabled = true;
+            switchToCodeBtn.disabled = true;
+            switchToDashboardBtn.disabled = true; // 新增
 
+            // 显示加载状态（靠左显示）
             const loadingDiv = document.createElement("div");
-            loadingDiv.className = "loading";
-            loadingDiv.innerHTML = '<div class="spinner"></div>模型思考中...';
+            loadingDiv.className = "flex items-start mb-4 message-in";
+            loadingDiv.innerHTML = `
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-secondary to-secondary-light flex items-center justify-center text-white font-bold shadow-md mr-3">
+                    <i class="fa fa-robot"></i>
+                </div>
+                <div class="bg-ai-bg rounded-2xl rounded-tl-none px-5 py-3 shadow-message typing-indicator">
+                    <span></span><span></span><span></span>
+                </div>
+            `;
             chatContainer.appendChild(loadingDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            scrollToBottom();
 
             try {
                 const response = await fetch(OLLAMA_API, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        user_id: USER_ID, // 关键：传入用户标识，实现连续对话
+                        user_id: USER_ID,
                         model: "qwen:7b-chat-q4_0", 
-                        messages: [{ role: "user", content: question }],
+                        messages: chatHistory, // 关键：传递完整的历史对话
                         stream: true, 
                         temperature: 0.7, 
                         max_tokens: 2048 
@@ -312,18 +430,27 @@
 
                 if (!response.ok) throw new Error(`API 响应错误：${response.status}`);
 
+                // 移除加载状态
                 loadingDiv.remove();
+                
+                // 创建AI消息容器（靠左显示）
                 const aiMessageDiv = document.createElement("div");
-                aiMessageDiv.className = "message ai";
-                aiMessageDiv.innerHTML = '<div class="avatar">AI</div><div class="content"></div>';
+                aiMessageDiv.className = "flex items-start mb-4 message-in";
+                aiMessageDiv.innerHTML = `
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-secondary to-secondary-light flex items-center justify-center text-white font-bold shadow-md mr-3">
+                        <i class="fa fa-robot"></i>
+                    </div>
+                    <div class="bg-ai-bg rounded-2xl rounded-tl-none px-5 py-3 shadow-message max-w-[80%]"></div>
+                `;
                 chatContainer.appendChild(aiMessageDiv);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
+                scrollToBottom();
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let aiAnswer = "";
-                const contentEl = aiMessageDiv.querySelector(".content");
+                const contentEl = aiMessageDiv.querySelector("div:last-child");
 
+                // 处理流式响应
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
@@ -334,43 +461,172 @@
                             const data = JSON.parse(chunk);
                             if (data.message?.content) {
                                 aiAnswer += data.message.content;
-                                // 用 innerHTML 而非 textContent，支持模型返回的 HTML 格式（如列表标签）
-                                contentEl.innerHTML = aiAnswer;
-                                chatContainer.scrollTop = chatContainer.scrollHeight;
+                                contentEl.innerHTML = formatMessage(aiAnswer);
+                                scrollToBottom();
                             }
                         } catch (e) {}
                     }
                 }
 
-                if (!aiAnswer) contentEl.textContent = "未获取到回答，请重试";
+                // 将AI回答添加到历史记录
+                if (aiAnswer) {
+                    chatHistory.push({ role: "assistant", content: aiAnswer });
+                } else {
+                    contentEl.textContent = "未获取到回答，请重试";
+                }
             } catch (error) {
                 loadingDiv.remove();
-                addMessage("ai", `出错了：${error.message}\n请检查 Ollama 服务是否正常运行`);
+                addMessage("assistant", `出错了：${error.message}\n请检查 Ollama 服务是否正常运行`);
             } finally {
                 submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+                clearBtn.disabled = false;
+                switchToCodeBtn.disabled = false;
+                switchToDashboardBtn.disabled = false; // 新增
             }
         }
 
-        function addMessage(role, content) {
-            const div = document.createElement("div");
-            div.className = `message ${role}`;
-            div.innerHTML = role === "user" 
-                ? `<div class="avatar">你</div><div class="content">${content}</div>` 
-                : `<div class="avatar">AI</div><div class="content">${content}</div>`;
-            chatContainer.appendChild(div);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+        // 打开代码分析器
+        function openCodeAnalyzerPage() {
+            // 检查代码分析器页面是否存在
+            fetch(CODE_ANALYZER_URL, { method: 'HEAD' })
+                .then(response => {
+                    if (response.ok) {
+                        window.open(CODE_ANALYZER_URL, '_blank');
+                    } else {
+                        alert('代码分析器页面未找到，请确保服务已启动并包含 code_analysis.html 文件');
+                        // 可选：创建代码分析器页面
+                        createCodeAnalyzerPage();
+                    }
+                })
+                .catch(() => {
+                    alert('无法访问代码分析器，请检查服务是否运行');
+                });
         }
 
+        // 新增：打开自动分析仪表盘
+        function openAutoAnalysisDashboard() {
+            // 检查仪表盘页面是否存在
+            fetch(AUTO_ANALYSIS_DASHBOARD_URL, { method: 'HEAD' })
+                .then(response => {
+                    if (response.ok) {
+                        window.open(AUTO_ANALYSIS_DASHBOARD_URL, '_blank');
+                    } else {
+                        alert('自动分析仪表盘页面未找到，请确保服务已启动并包含 auto_analysis_dashboard.html 文件');
+                    }
+                })
+                .catch(() => {
+                    alert('无法访问自动分析仪表盘，请检查服务是否运行');
+                });
+        }
+
+        // 创建代码分析器页面（备用）
+        function createCodeAnalyzerPage() {
+            // 这里可以添加创建代码分析页面的逻辑
+            // 或者提示用户如何获取该页面
+            alert('请在服务器目录中创建 code_analysis.html 文件，或使用之前提供的完整代码。');
+        }
+
+        // 显示代码分析模态框
+        function showCodeModal() {
+            codeModal.classList.remove('hidden');
+            codeModal.classList.add('flex');
+        }
+
+        // 隐藏代码分析模态框
+        function hideCodeModal() {
+            codeModal.classList.add('hidden');
+            codeModal.classList.remove('flex');
+        }
+
+        // 事件监听
         submitBtn.addEventListener("click", () => {
             const question = questionInput.value.trim();
             if (question) sendQuestion(question);
         });
 
+        clearBtn.addEventListener("click", clearChat);
+
+        // 快捷命令按钮
+        document.querySelectorAll('.quick-command').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const command = e.currentTarget.getAttribute('data-command');
+                questionInput.value = command;
+                questionInput.focus();
+            });
+        });
+
         questionInput.addEventListener("keydown", (e) => {
-            if (e.key === "Enter" && questionInput.value.trim()) {
-                sendQuestion(questionInput.value.trim());
+            // Shift+Enter换行，Enter发送
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                const question = questionInput.value.trim();
+                if (question) sendQuestion(question);
             }
         });
+
+        // 代码分析相关事件
+        switchToCodeBtn.addEventListener('click', openCodeAnalyzerPage);
+        quickCodeBtn.addEventListener('click', showCodeModal);
+        closeModal.addEventListener('click', hideCodeModal);
+        codeAnalysisHint.addEventListener('click', showCodeModal);
+        
+        // 新增：仪表盘相关事件
+        switchToDashboardBtn.addEventListener('click', openAutoAnalysisDashboard);
+        quickDashboardBtn.addEventListener('click', openAutoAnalysisDashboard);
+        dashboardHint.addEventListener('click', openAutoAnalysisDashboard);
+        
+        // 模态框背景点击关闭
+        codeModal.addEventListener('click', (e) => {
+            if (e.target === codeModal) {
+                hideCodeModal();
+            }
+        });
+
+        openCodeAnalyzer.addEventListener('click', () => {
+            hideCodeModal();
+            openCodeAnalyzerPage();
+        });
+
+        pasteCodeHere.addEventListener('click', () => {
+            hideCodeModal();
+            // 读取剪贴板内容
+            navigator.clipboard.readText()
+                .then(text => {
+                    if (text.trim()) {
+                        const codeAnalysisPrompt = `请分析以下代码：\n\n\`\`\`\n${text}\n\`\`\`\n\n请说明：\n1. 代码的主要功能\n2. 关键算法或逻辑\n3. 可能的性能问题\n4. 改进建议`;
+                        questionInput.value = codeAnalysisPrompt;
+                        questionInput.focus();
+                    } else {
+                        alert('剪贴板中没有检测到文本内容');
+                    }
+                })
+                .catch(err => {
+                    console.error('读取剪贴板失败:', err);
+                    questionInput.value = '请粘贴要分析的代码到这里，我会帮你分析结构和性能问题。';
+                    questionInput.focus();
+                });
+        });
+
+        // 初始聚焦输入框
+        questionInput.focus();
+        
+        // 添加键盘快捷键：Ctrl+Shift+C 打开代码分析器
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+                e.preventDefault();
+                showCodeModal();
+            }
+            // 新增：Ctrl+Shift+D 打开仪表盘
+            if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+                e.preventDefault();
+                openAutoAnalysisDashboard();
+            }
+        });
+        
+        // 添加页面切换提示
+        console.log('💡 提示：点击右上角"代码分析器"按钮或按 Ctrl+Shift+C 打开代码分析工具');
+        console.log('📊 提示：点击右上角"分析仪表盘"按钮或按 Ctrl+Shift+D 打开自动分析仪表盘');
     </script>
 </body>
 </html>

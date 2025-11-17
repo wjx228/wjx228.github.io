@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>代码智能分析器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            border: 1px solid #e1e4e8;
+            border-radius: 10px;
+            padding: 25px;
+            background: #fafbfc;
+        }
+
+        .panel h2 {
+            color: #2d3748;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+            font-size: 1.5em;
+        }
+
+        .code-editor {
+            width: 100%;
+            min-height: 300px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            resize: vertical;
+            background: #f8fafc;
+            color: #2d3748;
+            transition: border-color 0.3s;
+        }
+
+        .code-editor:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #edf2f7;
+            color: #4a5568;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: #fc8181;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #f56565;
+            transform: translateY(-1px);
+        }
+
+        .analysis-result {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 300px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .analysis-result h3 {
+            color: #2d3748;
+            margin: 15px 0 10px 0;
+        }
+
+        .analysis-result ul, .analysis-result ol {
+            padding-left: 20px;
+            margin: 10px 0;
+        }
+
+        .analysis-result li {
+            margin: 5px 0;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #e2e8f0;
+        }
+
+        .status-active {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-error {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .comparison-section {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .execution-log {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        .log-info { color: #63b3ed; }
+        .log-success { color: #68d391; }
+        .log-warning { color: #f6e05e; }
+        .log-error { color: #fc8181; }
+        .log-ai { color: #b794f4; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 代码智能分析器</h1>
+            <p>上传代码自动解析用途 | 运行时智能分析 | 代码优劣比较</p>
+            <div class="status-indicator" id="serviceStatus">
+                服务状态: 检查中...
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="panel">
+                <h2>📝 代码编辑器</h2>
+                <textarea id="codeEditor" class="code-editor" placeholder="粘贴您的代码到这里...">
+# 示例代码
+def fibonacci(n):
+    """计算斐波那契数列"""
+    if n <= 0:
+        return 0
+    elif n == 1:
+        return 1
+    else:
+        a, b = 0, 1
+        for i in range(2, n + 1):
+            a, b = b, a + b
+        return b
+
+def factorial(n):
+    """计算阶乘"""
+    result = 1
+    for i in range(1, n + 1):
+        result *= i
+    return result
+
+# 测试代码
+if __name__ == "__main__":
+    print("斐波那契数列第10项:", fibonacci(10))
+    print("10的阶乘:", factorial(10))
+    print("计算完成!")
+                </textarea>
+                <div class="btn-group">
+                    <button class="btn-primary" onclick="analyzeCode()">
+                        <span>📊</span> 分析代码
+                    </button>
+                    <button class="btn-primary" onclick="executeCode()">
+                        <span>▶️</span> 运行并分析
+                    </button>
+                    <button class="btn-secondary" onclick="loadExample()">
+                        <span>📋</span> 加载示例
+                    </button>
+                    <button class="btn-secondary" onclick="clearEditor()">
+                        <span>🗑️</span> 清空
+                    </button>
+                </div>
+
+                <div class="loading" id="loading1">
+                    <div class="spinner"></div>
+                    <p>AI正在分析代码...</p>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>📈 分析结果</h2>
+                <div id="analysisResult" class="analysis-result">
+                    分析结果将显示在这里...
+                </div>
+                <div id="executionLog" class="execution-log" style="display: none;">
+                    <!-- 执行日志将动态插入 -->
+                </div>
+            </div>
+
+            <div class="comparison-section">
+                <div class="panel">
+                    <h2>🔄 代码比较 (A)</h2>
+                    <textarea id="codeA" class="code-editor" placeholder="第一段代码..." style="min-height: 200px;">
+def sum_list_for_loop(lst):
+    total = 0
+    for num in lst:
+        total += num
+    return total
+                    </textarea>
+                </div>
+                <div class="panel">
+                    <h2>🔄 代码比较 (B)</h2>
+                    <textarea id="codeB" class="code-editor" placeholder="第二段代码..." style="min-height: 200px;">
+def sum_list_builtin(lst):
+    return sum(lst)
+                    </textarea>
+                    <div class="btn-group" style="margin-top: 20px;">
+                        <button class="btn-primary" onclick="compareCode()">
+                            <span>⚖️</span> 比较代码
+                        </button>
+                    </div>
+                    <div class="loading" id="loading2">
+                        <div class="spinner"></div>
+                        <p>正在比较代码...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://' + window.location.hostname + ':5000/api';
+        let currentExecutionId = null;
+        let pollInterval = null;
+
+        // 检查服务状态
+        async function checkServiceStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                const statusEl = document.getElementById('serviceStatus');
+                
+                if (data.status === 'ok') {
+                    statusEl.textContent = '✅ 服务状态: 正常';
+                    statusEl.className = 'status-indicator status-active';
+                } else {
+                    statusEl.textContent = '❌ 服务状态: 异常';
+                    statusEl.className = 'status-indicator status-error';
+                }
+            } catch (error) {
+                document.getElementById('serviceStatus').textContent = '❌ 服务状态: 连接失败';
+                document.getElementById('serviceStatus').className = 'status-indicator status-error';
+            }
+        }
+
+        // 分析代码
+        async function analyzeCode() {
+            const code = document.getElementById('codeEditor').value;
+            if (!code.trim()) {
+                alert('请输入代码');
+                return;
+            }
+
+            document.getElementById('loading1').classList.add('active');
+            document.getElementById('executionLog').style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE}/code/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayAnalysisResult(data.analysis);
+                } else {
+                    throw new Error(data.error || '分析失败');
+                }
+            } catch (error) {
+                displayAnalysisResult(`❌ 分析失败: ${error.message}`);
+            } finally {
+                document.getElementById('loading1').classList.remove('active');
+            }
+        }
+
+        // 执行代码并监控
+        async function executeCode() {
+            const code = document.getElementById('codeEditor').value;
+            if (!code.trim()) {
+                alert('请输入代码');
+                return;
+            }
+
+            document.getElementById('loading1').classList.add('active');
+            document.getElementById('executionLog').style.display = 'block';
+            clearExecutionLog();
+            addToLog('🚀 开始执行代码...', 'info');
+
+            try {
+                const response = await fetch(`${API_BASE}/code/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        code: code,
+                        user_id: 'web_user_' + Date.now()
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    addToLog('✅ 代码已提交执行', 'success');
+                    addToLog(`📋 执行ID: ${data.execution_id}`, 'info');
+                    
+                    // 显示静态分析
+                    displayAnalysisResult(data.static_analysis);
+                    
+                    // 开始轮询执行结果
+                    currentExecutionId = data.execution_id;
+                    startPollingExecution();
+                } else {
+                    throw new Error(data.error || '执行失败');
+                }
+            } catch (error) {
+                addToLog(`❌ 执行失败: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('loading1').classList.remove('active');
+            }
+        }
+
+        // 轮询执行结果
+        function startPollingExecution() {
+            if (pollInterval) clearInterval(pollInterval);
+            
+            pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/code/result/${currentExecutionId}`);
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        const result = data.result;
+                        
+                        if (result.success !== undefined) {
+                            // 执行完成
+                            clearInterval(pollInterval);
+                            
+                            addToLog('\n📊 执行完成!', 'success');
+                            
+                            if (result.stdout) {
+                                addToLog('\n📄 输出结果:', 'info');
+                                addToLog(result.stdout, 'info');
+                            }
+                            
+                            if (result.stderr) {
+                                addToLog('\n⚠️ 错误信息:', 'warning');
+                                addToLog(result.stderr, 'error');
+                            }
+                            
+                            if (result.timeout) {
+                                addToLog('\n⏰ 执行超时', 'error');
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('轮询失败:', error);
+                }
+            }, 1000);
+        }
+
+        // 比较代码
+        async function compareCode() {
+            const codeA = document.getElementById('codeA').value;
+            const codeB = document.getElementById('codeB').value;
+            
+            if (!codeA.trim() || !codeB.trim()) {
+                alert('请输入两段代码进行比较');
+                return;
+            }
+
+            document.getElementById('loading2').classList.add('active');
+
+            try {
+                const response = await fetch(`${API_BASE}/code/compare`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        code_a: codeA,
+                        code_b: codeB
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayAnalysisResult(data.comparison);
+                } else {
+                    throw new Error(data.error || '比较失败');
+                }
+            } catch (error) {
+                displayAnalysisResult(`❌ 比较失败: ${error.message}`);
+            } finally {
+                document.getElementById('loading2').classList.remove('active');
+            }
+        }
+
+        // 显示分析结果
+        function displayAnalysisResult(content) {
+            const resultEl = document.getElementById('analysisResult');
+            resultEl.innerHTML = formatMarkdown(content);
+        }
+
+        // 清空编辑器
+        function clearEditor() {
+            if (confirm('确定要清空代码编辑器吗？')) {
+                document.getElementById('codeEditor').value = '';
+            }
+        }
+
+        // 加载示例代码
+        function loadExample() {
+            const exampleCode = `# 快速排序算法示例
+def quick_sort(arr):
+    """快速排序实现"""
+    if len(arr) <= 1:
+        return arr
+    
+    pivot = arr[len(arr) // 2]
+    left = [x for x in arr if x < pivot]
+    middle = [x for x in arr if x == pivot]
+    right = [x for x in arr if x > pivot]
+    
+    return quick_sort(left) + middle + quick_sort(right)
+
+# 性能测试
+def performance_test():
+    import time
+    import random
+    
+    # 生成测试数据
+    test_data = [random.randint(0, 10000) for _ in range(1000)]
+    
+    # 测试快速排序
+    start_time = time.time()
+    sorted_data = quick_sort(test_data.copy())
+    end_time = time.time()
+    
+    print(f"排序耗时: {end_time - start_time:.4f}秒")
+    print(f"排序验证: {sorted_data[:10]}... 等1000个元素")
+    return sorted_data
+
+if __name__ == "__main__":
+    print("=== 快速排序性能测试 ===")
+    result = performance_test()
+    print("测试完成!")`;
+            
+            document.getElementById('codeEditor').value = exampleCode;
+        }
+
+        // 执行日志相关函数
+        function clearExecutionLog() {
+            const logEl = document.getElementById('executionLog');
+            logEl.innerHTML = '';
+        }
+
+        function addToLog(message, type = 'info') {
+            const logEl = document.getElementById('executionLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logEl.appendChild(logEntry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // 简单的Markdown格式化
+        function formatMarkdown(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n\s*(\d+)\./g, '\n<br><strong>$1.</strong>')
+                .replace(/\n\s*[-*]\s/g, '\n<br>• ')
+                .replace(/\n/g, '<br>')
+                .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            checkServiceStatus();
+            // 每30秒检查一次服务状态
+            setInterval(checkServiceStatus, 30000);
+        });
+    </script>
+</body>
+</html>
