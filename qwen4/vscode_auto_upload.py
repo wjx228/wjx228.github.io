@@ -25,7 +25,7 @@ class VSCodeAutoUploadClient:
             user_id: 用户ID
         """
         self.server_url = server_url
-        self.user_id = user_id or f"user_{socket.gethostname()}_{os.getpid()}_{int(time.time())}"
+        self.user_id = "wjx_228"
         
         # 固定项目路径为你的demo目录
         self.project_path = Path(r"D:\wjx228.github.io\qwen4\demo").absolute()
