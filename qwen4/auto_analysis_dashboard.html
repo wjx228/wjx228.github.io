@@ -159,6 +159,7 @@
             font-weight: bold;
         }
 
+        /* 优化：补充标准属性line-clamp，提升兼容性 */
         .analysis-preview {
             color: #666;
             line-height: 1.5;
@@ -169,6 +170,7 @@
             display: -webkit-box;
             -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
+            line-clamp: 3;
         }
 
         .analysis-detail {
@@ -311,6 +313,7 @@
             font-style: italic;
         }
 
+        /* 优化：移动端响应式细节调整 */
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -325,6 +328,16 @@
             .stats {
                 justify-content: center;
                 flex-wrap: wrap;
+            }
+
+            .stat-card {
+                flex: 1;
+                min-width: 120px;
+                margin: 5px;
+            }
+
+            .detail-content {
+                max-height: 300px;
             }
         }
     </style>
@@ -361,11 +374,11 @@
             <div class="panel">
                 <h2><span>📋</span> 最近分析记录</h2>
                 <div class="filters">
-                    <button class="filter-btn active" onclick="filterAnalyses('all')">全部</button>
-                    <button class="filter-btn" onclick="filterAnalyses('save')">保存</button>
-                    <button class="filter-btn" onclick="filterAnalyses('run')">运行</button>
-                    <button class="filter-btn" onclick="filterAnalyses('test')">测试</button>
-                    <button class="filter-btn" onclick="filterAnalyses('manual')">手动</button>
+                    <button class="filter-btn active" onclick="debouncedFilter('all')">全部</button>
+                    <button class="filter-btn" onclick="debouncedFilter('save')">保存</button>
+                    <button class="filter-btn" onclick="debouncedFilter('run')">运行</button>
+                    <button class="filter-btn" onclick="debouncedFilter('test')">测试</button>
+                    <button class="filter-btn" onclick="debouncedFilter('manual')">手动</button>
                 </div>
                 <div id="recentAnalyses">
                     <div class="loading">正在加载分析记录...</div>
@@ -390,6 +403,24 @@
         let refreshInterval = null;
         let allAnalyses = [];
         let currentFilter = 'all';
+        // 缓存高频DOM元素，优化性能
+        const $recentAnalyses = document.getElementById('recentAnalyses');
+        const $selectedAnalysis = document.getElementById('selectedAnalysis');
+        const $statusDot = document.getElementById('statusDot');
+        const $statusText = document.getElementById('statusText');
+        const $userIdDisplay = document.getElementById('userIdDisplay');
+        const $totalAnalyses = document.getElementById('totalAnalyses');
+        const $realtimeAnalyses = document.getElementById('realtimeAnalyses');
+        const $runtimeAnalyses = document.getElementById('runtimeAnalyses');
+
+        // 工具函数：防抖（避免高频请求）
+        function debounce(fn, delay = 300) {
+            let timer;
+            return (...args) => {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
 
         // 从URL获取用户ID
         function getUserIdFromUrl() {
@@ -411,7 +442,7 @@
                 window.history.replaceState({}, '', newUrl);
             }
             
-            document.getElementById('userIdDisplay').textContent = `用户: ${currentUser}`;
+            $userIdDisplay.textContent = `用户: ${currentUser}`;
             
             // 检查连接状态
             checkConnection();
@@ -430,19 +461,22 @@
         // 检查连接状态
         async function checkConnection() {
             try {
-                const response = await fetch('/api/health');
+                const response = await Promise.race([
+                    fetch('/api/health'),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), 10000))
+                ]);
                 if (response.ok) {
-                    document.getElementById('statusText').textContent = '已连接到云平台';
-                    document.getElementById('statusDot').style.backgroundColor = '#28a745';
+                    $statusText.textContent = '已连接到云平台';
+                    $statusDot.style.backgroundColor = '#28a745';
                     return true;
                 } else {
-                    document.getElementById('statusText').textContent = '连接异常';
-                    document.getElementById('statusDot').style.backgroundColor = '#dc3545';
+                    $statusText.textContent = '连接异常';
+                    $statusDot.style.backgroundColor = '#dc3545';
                     return false;
                 }
             } catch (error) {
-                document.getElementById('statusText').textContent = '连接断开';
-                document.getElementById('statusDot').style.backgroundColor = '#dc3545';
+                $statusText.textContent = '连接断开';
+                $statusDot.style.backgroundColor = '#dc3545';
                 return false;
             }
         }
@@ -456,18 +490,22 @@
             }
         }
 
-        // 加载最近的分析记录
+        // 加载最近的分析记录（优化：添加超时+加载状态）
         async function loadRecentAnalyses() {
+            $recentAnalyses.innerHTML = '<div class="loading">正在加载分析记录...</div>';
             try {
-                const response = await fetch(`/api/vscode/recent_analyses?user_id=${currentUser}&limit=20`);
-                if (!response.ok) throw new Error('加载失败');
+                const response = await Promise.race([
+                    fetch(`/api/vscode/recent_analyses?user_id=${currentUser}&limit=20`),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), 10000))
+                ]);
+                if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
                 
                 const data = await response.json();
                 allAnalyses = data.analyses;
                 
                 // 更新统计信息
-                document.getElementById('totalAnalyses').textContent = data.count;
-                document.getElementById('realtimeAnalyses').textContent = 
+                $totalAnalyses.textContent = data.count;
+                $realtimeAnalyses.textContent = 
                     allAnalyses.filter(a => isRecent(a.timestamp, 300)).length; // 5分钟内的算实时
                 
                 // 显示分析列表
@@ -475,19 +513,22 @@
                 
             } catch (error) {
                 console.error('加载分析记录失败:', error);
-                document.getElementById('recentAnalyses').innerHTML = 
-                    '<div class="error">加载分析记录失败，请检查连接</div>';
+                $recentAnalyses.innerHTML = 
+                    `<div class="error">加载失败：${error.message}，请重试</div>`;
             }
         }
 
-        // 加载运行时分析记录
+        // 加载运行时分析记录（优化：添加超时）
         async function loadRuntimeAnalyses() {
             try {
-                const response = await fetch(`/api/vscode/runtime_analyses?user_id=${currentUser}&limit=5`);
-                if (!response.ok) throw new Error('加载失败');
+                const response = await Promise.race([
+                    fetch(`/api/vscode/runtime_analyses?user_id=${currentUser}&limit=5`),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), 10000))
+                ]);
+                if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
                 
                 const data = await response.json();
-                document.getElementById('runtimeAnalyses').textContent = data.count;
+                $runtimeAnalyses.textContent = data.count;
                 
             } catch (error) {
                 console.error('加载运行时分析失败:', error);
@@ -496,10 +537,8 @@
 
         // 显示分析列表
         function displayAnalyses(analyses) {
-            const container = document.getElementById('recentAnalyses');
-            
             if (analyses.length === 0) {
-                container.innerHTML = '<div class="no-data">暂无分析记录</div>';
+                $recentAnalyses.innerHTML = '<div class="no-data">暂无分析记录</div>';
                 return;
             }
             
@@ -510,11 +549,11 @@
             }
             
             if (filteredAnalyses.length === 0) {
-                container.innerHTML = `<div class="no-data">没有${getFilterLabel(currentFilter)}的分析记录</div>`;
+                $recentAnalyses.innerHTML = `<div class="no-data">没有${getFilterLabel(currentFilter)}的分析记录</div>`;
                 return;
             }
             
-            container.innerHTML = filteredAnalyses.map(analysis => `
+            $recentAnalyses.innerHTML = filteredAnalyses.map(analysis => `
                 <div class="analysis-item ${analysis.analysis_id === currentAnalysisId ? 'active' : ''}" 
                      onclick="selectAnalysis('${analysis.analysis_id}', this)"
                      data-trigger="${analysis.trigger_type}">
@@ -553,24 +592,25 @@
             
             try {
                 // 加载分析详情
-                const response = await fetch(`/api/vscode/analysis_detail/${analysisId}`);
-                if (!response.ok) throw new Error('加载详情失败');
+                const response = await Promise.race([
+                    fetch(`/api/vscode/analysis_detail/${analysisId}`),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), 10000))
+                ]);
+                if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
                 
                 const detail = await response.json();
                 displayAnalysisDetail(detail);
                 
             } catch (error) {
                 console.error('加载分析详情失败:', error);
-                document.getElementById('selectedAnalysis').innerHTML = 
-                    '<div class="error">加载分析详情失败</div>';
+                $selectedAnalysis.innerHTML = 
+                    `<div class="error">加载详情失败：${error.message}</div>`;
             }
         }
 
         // 显示分析详情
         function displayAnalysisDetail(detail) {
-            const container = document.getElementById('selectedAnalysis');
-            
-            container.innerHTML = `
+            $selectedAnalysis.innerHTML = `
                 <div class="analysis-header">
                     <h3>${escapeHtml(detail.filename || '未命名文件')}</h3>
                     <div class="timestamp">${formatTimestamp(detail.timestamp)}</div>
@@ -618,7 +658,7 @@
             `;
         }
 
-        // 过滤分析记录
+        // 过滤分析记录（防抖处理）
         function filterAnalyses(filter) {
             currentFilter = filter;
             
@@ -631,29 +671,33 @@
             // 重新显示分析列表
             displayAnalyses(allAnalyses);
         }
+        // 防抖后的过滤函数
+        const debouncedFilter = debounce(filterAnalyses);
 
         // 显示最近分析
         function showRecentAnalyses() {
-            filterAnalyses('all');
+            debouncedFilter('all');
         }
 
         // 显示运行时分析
         async function showRuntimeAnalyses() {
+            $recentAnalyses.innerHTML = '<div class="loading">正在加载运行时分析...</div>';
             try {
-                const response = await fetch(`/api/vscode/runtime_analyses?user_id=${currentUser}&limit=10`);
-                if (!response.ok) throw new Error('加载失败');
+                const response = await Promise.race([
+                    fetch(`/api/vscode/runtime_analyses?user_id=${currentUser}&limit=10`),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), 10000))
+                ]);
+                if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
                 
                 const data = await response.json();
-                
-                const container = document.getElementById('recentAnalyses');
                 const analyses = data.runtime_analyses;
                 
                 if (analyses.length === 0) {
-                    container.innerHTML = '<div class="no-data">暂无运行时分析记录</div>';
+                    $recentAnalyses.innerHTML = '<div class="no-data">暂无运行时分析记录</div>';
                     return;
                 }
                 
-                container.innerHTML = analyses.map(analysis => `
+                $recentAnalyses.innerHTML = analyses.map(analysis => `
                     <div class="analysis-item" onclick="selectRuntimeAnalysis('${analysis.analysis_id}')">
                         <div class="analysis-header">
                             <div class="filename">运行时分析</div>
@@ -672,27 +716,33 @@
                 
             } catch (error) {
                 console.error('显示运行时分析失败:', error);
+                $recentAnalyses.innerHTML = 
+                    `<div class="error">加载失败：${error.message}，请重试</div>`;
             }
         }
 
         // 选择运行时分析
         async function selectRuntimeAnalysis(analysisId) {
             try {
-                const response = await fetch(`/api/vscode/analysis_detail/${analysisId}`);
-                if (!response.ok) throw new Error('加载详情失败');
+                const response = await Promise.race([
+                    fetch(`/api/vscode/analysis_detail/${analysisId}`),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), 10000))
+                ]);
+                if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
                 
                 const detail = await response.json();
                 displayAnalysisDetail(detail);
                 
             } catch (error) {
                 console.error('加载运行时分析详情失败:', error);
+                $selectedAnalysis.innerHTML = 
+                    `<div class="error">加载详情失败：${error.message}</div>`;
             }
         }
 
         // 重新分析
         async function reanalyze(analysisId) {
             try {
-                // 这里可以调用重新分析的API
                 alert('重新分析功能待实现，您可以手动触发新的分析。');
             } catch (error) {
                 console.error('重新分析失败:', error);
@@ -702,25 +752,28 @@
         // 执行代码
         async function executeCode(code) {
             try {
-                const response = await fetch('/api/code/execute', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        code: code,
-                        user_id: currentUser
-                    })
-                });
+                const response = await Promise.race([
+                    fetch('/api/code/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            code: code,
+                            user_id: currentUser
+                        })
+                    }),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), 15000))
+                ]);
                 
                 if (response.ok) {
                     const result = await response.json();
                     alert(`代码已提交执行，执行ID: ${result.execution_id}`);
                     refreshData(); // 刷新数据
                 } else {
-                    throw new Error('执行请求失败');
+                    throw new Error(`执行请求失败: ${response.status}`);
                 }
             } catch (error) {
                 console.error('执行代码失败:', error);
-                alert('执行代码失败，请检查控制台');
+                alert(`执行代码失败：${error.message}`);
             }
         }
 
@@ -743,7 +796,7 @@
                     document.querySelectorAll('.analysis-item').forEach(item => {
                         item.classList.remove('active');
                     });
-                    document.getElementById('selectedAnalysis').innerHTML = 
+                    $selectedAnalysis.innerHTML = 
                         '<p style="color: #666; text-align: center; padding: 40px;">请从左侧选择一个分析记录查看详情</p>';
                 }
             });

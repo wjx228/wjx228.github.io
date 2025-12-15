@@ -30,6 +30,33 @@ POINT_PROMPT = "\n\n请用清晰的分点格式（序号1、2、3...或项目符
 # ----------------------------------------------------------------------
 
 # -------------------------- 新增：代码分析配置 --------------------------
+def extract_code_between_markers(code_content, start_marker="#***start***#", end_marker="#***end***#"):
+    """
+    提取两个注释标记之间的代码片段
+    :param code_content: 完整的代码文本
+    :param start_marker: 起始标记注释
+    :param end_marker: 结束标记注释
+    :return: 标记之间的代码（无标记则返回空字符串）
+    """
+    lines = code_content.split('\n')
+    in_target_section = False
+    target_lines = []
+    
+    for line in lines:
+        stripped_line = line.strip()
+        # 检测起始标记
+        if stripped_line == start_marker:
+            in_target_section = True
+            continue  # 跳过起始标记行本身
+        # 检测结束标记
+        if stripped_line == end_marker:
+            in_target_section = False
+            break  # 找到结束标记，直接终止遍历
+        # 收集区间内的代码
+        if in_target_section:
+            target_lines.append(line)
+    
+    return '\n'.join(target_lines).strip()
 CODE_ANALYSIS_PROMPTS = {
     "explain": """请分析以下代码，按以下格式回答：
     1. **主要功能**：简要说明代码的主要目的
@@ -102,48 +129,52 @@ class VSCodeFileHandler(FileSystemEventHandler):
         self.last_modified_times = {}
     
     def on_modified(self, event):
-        if event.is_directory:
-            return
+     if event.is_directory:
+         return
+        
+     if event.src_path.endswith('.py'):
+        try:
+            current_time = time.time()
+            file_path = event.src_path
             
-        if event.src_path.endswith('.py'):
-            try:
-                current_time = time.time()
-                file_path = event.src_path
+            # 防止频繁触发
+            if file_path in self.last_modified_times:
+                if current_time - self.last_modified_times[file_path] < 2:
+                    return
+            
+            self.last_modified_times[file_path] = current_time
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                full_code = f.read()
+            # ========== 新增：提取标记区间内的代码 ==========
+            target_code = extract_code_between_markers(full_code)
+            if not target_code:
+                target_code = full_code  # 无标记则用完整代码
+            # ==============================================
+            
+            # 保存最近修改的代码（替换为提取后的代码）
+            VSCODE_CODE_SNIPPETS[self.user_id] = {
+                'file': file_path,
+                'code': target_code,  # 存储提取后的代码
+                'time': datetime.now()
+            }
+            
+            print(f"📝 检测到VSCode代码修改: {file_path}")
+            
+            # 如果启用自动上传，则自动分析
+            if self.auto_upload and len(target_code.strip()) > 10:
+                analysis_id = f"auto_{int(time.time())}_{hashlib.md5(target_code.encode()).hexdigest()[:8]}"
                 
-                # 防止频繁触发
-                if file_path in self.last_modified_times:
-                    if current_time - self.last_modified_times[file_path] < 2:  # 2秒防抖
-                        return
+                threading.Thread(
+                    target=process_auto_upload_analysis,
+                    args=(analysis_id, target_code, self.user_id, os.path.basename(file_path), "save"),
+                    daemon=True
+                ).start()
                 
-                self.last_modified_times[file_path] = current_time
+                print(f"🔄 自动分析已触发: {analysis_id}")
                 
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    code = f.read()
-                
-                # 保存最近修改的代码
-                VSCODE_CODE_SNIPPETS[self.user_id] = {
-                    'file': file_path,
-                    'code': code,
-                    'time': datetime.now()
-                }
-                
-                print(f"📝 检测到VSCode代码修改: {file_path}")
-                
-                # 如果启用自动上传，则自动分析
-                if self.auto_upload and len(code.strip()) > 10:
-                    # 异步进行自动分析
-                    analysis_id = f"auto_{int(time.time())}_{hashlib.md5(code.encode()).hexdigest()[:8]}"
-                    
-                    threading.Thread(
-                        target=process_auto_upload_analysis,
-                        args=(analysis_id, code, self.user_id, os.path.basename(file_path), "save"),
-                        daemon=True
-                    ).start()
-                    
-                    print(f"🔄 自动分析已触发: {analysis_id}")
-                    
-            except Exception as e:
-                print(f"❌ 读取代码文件失败: {str(e)}")
+        except Exception as e:
+            print(f"❌ 读取代码文件失败: {str(e)}")
 
 def start_vscode_monitor(user_id, project_path, auto_upload=False):
     """启动VSCode项目监控"""
@@ -219,36 +250,45 @@ OLLAMA_API_URL = f"http://{LOCAL_IP}:11435/api/chat"
 
 # -------------------------- 新增：代码分析函数 --------------------------
 def analyze_code(code, analysis_type="explain", context=None):
-    """调用大模型分析代码"""
+    """调用大模型分析代码（优先分析标记区间内的代码）"""
     if analysis_type not in CODE_ANALYSIS_PROMPTS:
         analysis_type = "explain"
     
     # 容错处理：确保上下文不为空
     context = context or {}
+
+    # ========== 新增核心逻辑：提取标记区间内的代码 ==========
+    target_code = extract_code_between_markers(code)
+    if not target_code:
+        # 没有找到标记区间，使用完整代码（兼容原有逻辑）
+        target_code = code
+    # =======================================================
     
     try:
         if analysis_type == "debug":
             prompt = CODE_ANALYSIS_PROMPTS[analysis_type].format(
-                code=code,
+                code=target_code,  # 替换为提取后的代码
                 error=context.get('error', ''),
                 stack_trace=context.get('stack_trace', '')
             )
         elif analysis_type == "comparison":
+            # 比较模式下，两段代码都要提取标记区间
+            code_a = extract_code_between_markers(context.get('code_a', code)) or context.get('code_a', code)
+            code_b = extract_code_between_markers(context.get('code_b', '')) or context.get('code_b', '')
             prompt = CODE_ANALYSIS_PROMPTS[analysis_type].format(
-                code_a=context.get('code_a', code),
-                code_b=context.get('code_b', '')
+                code_a=code_a,
+                code_b=code_b
             )
         elif analysis_type == "runtime_analysis":
-            # 容错：将 context 转为字符串，避免格式化错误
             context_str = json.dumps(context, ensure_ascii=False, indent=2) if isinstance(context, dict) else str(context)
             prompt = CODE_ANALYSIS_PROMPTS[analysis_type].format(context=context_str)
         else:
-            prompt = CODE_ANALYSIS_PROMPTS[analysis_type].format(code=code)
+            prompt = CODE_ANALYSIS_PROMPTS[analysis_type].format(code=target_code)  # 替换为提取后的代码
         
         response = requests.post(
             OLLAMA_API_URL,
             json={
-                "model": "qwen:7b-chat-q4_0",  # 请根据您的模型调整
+                "model": "qwen:7b-chat-q4_0",
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False
             },
