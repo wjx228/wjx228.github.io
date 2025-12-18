@@ -10,25 +10,98 @@ import subprocess
 import threading
 import queue
 import re
-import os
+import os  # 只保留一次导入，删除重复的
 import watchdog
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import hashlib
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})  # 跨域支持
+# 新配置（解决所有跨域场景）
+CORS(app, 
+     resources={r"/*": {
+         "origins": "*",          # 允许所有来源
+         "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE"],  # 允许所有请求方法
+         "allow_headers": "*",    # 允许所有请求头
+         "expose_headers": "*"    # 暴露所有响应头
+     }},
+     supports_credentials=True)   # 支持凭证（如Cookie）
 
-HTML_FOLDER = "."
+HTML_FOLDER = "/home/wjxwjx/wjx228.github.io/qwen4"
+# 确保目录存在（防止路径写错导致找不到文件）
+os.makedirs(HTML_FOLDER, exist_ok=True)  
 
-# -------------------------- 连续对话核心配置 --------------------------
+# ========== 关键修复：把POINT_PROMPT移到代理接口之前 ==========
+# 新增：分点输出提示词（让模型强制分点换行）
+POINT_PROMPT = "\n\n请用清晰的分点格式（序号1、2、3...或项目符号）回答，每个要点单独一行，确保易读性。"
+
+# ========== 新增：Ollama 代理接口（核心代码） ==========
+# 配置 Ollama 本地服务地址（11434 端口，千问模型运行的端口）
+OLLAMA_LOCAL_URL = "http://127.0.0.1:11434/api/chat"
+OLLAMA_MODEL_NAME = "qwen:7b-chat-q4_0"  # 固定使用千问7B模型
+
+# Flask 代理接口：前端调用这个接口（替代直接访问 Ollama）
+@app.route('/api/chat', methods=['POST'])
+def chat_proxy():
+    try:
+        # 1. 获取前端发送的请求数据
+        request_data = request.get_json()
+        if not request_data:
+            return jsonify({"error": "请求数据为空"}), 400
+        
+        # 2. 提取关键参数（兼容你原有对话历史逻辑）
+        user_id = request_data.get("user_id", "default_user")
+        messages = request_data.get("messages", [])
+        stream = request_data.get("stream", True)  # 默认流式回复（打字机效果）
+        temperature = request_data.get("temperature", 0.7)
+        max_tokens = request_data.get("max_tokens", 2048)
+        
+        # 3. 给最后一条用户消息追加「分点输出」提示词（不修改历史消息）
+        if messages and messages[-1]["role"] == "user":
+            messages[-1]["content"] += POINT_PROMPT  # 现在POINT_PROMPT已定义，不会报错
+        
+        # 4. 构造发给 Ollama 的请求数据
+        ollama_request = {
+            "model": OLLAMA_MODEL_NAME,
+            "messages": messages,
+            "stream": stream,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        # 5. 转发请求到本地 Ollama 服务（11434 端口）
+        response = requests.post(
+            OLLAMA_LOCAL_URL,
+            json=ollama_request,
+            stream=stream,  # 流式响应（关键：保持和前端一致）
+            timeout=60      # 超时时间60秒（防止模型响应慢导致断开）
+        )
+        
+        # 6. 处理流式响应（前端需要的打字机效果）
+        if stream:
+            def generate():
+                for chunk in response.iter_lines():
+                    if chunk:
+                        yield chunk + b'\n'  # 按行返回，兼容前端解析逻辑
+            return Response(generate(), mimetype="application/json")
+        # 7. 处理非流式响应（备用）
+        else:
+            return jsonify(response.json()), response.status_code
+    
+    except requests.exceptions.ConnectionError:
+        return jsonify({"error": "无法连接到 Ollama 服务，请检查 11434 端口是否运行"}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Ollama 响应超时，请重试"}), 504
+    except Exception as e:
+        # 打印详细错误日志（方便排查）
+        print(f"Ollama 代理接口错误：{str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": f"服务器内部错误：{str(e)}"}), 500
+# ========== 新增结束 ==========
+
 conversation_history = {}  # key=user_id, value=[{"role": ..., "content": ..., "time": ...}]
 MAX_HISTORY_ROUNDS = 20    # 最多保留20轮对话（每轮=用户+助手）
 MAX_HISTORY_AGE = 3600     # 对话历史1小时后自动过期
-# 新增：分点输出提示词（让模型强制分点换行）
-POINT_PROMPT = "\n\n请用清晰的分点格式（序号1、2、3...或项目符号）回答，每个要点单独一行，确保易读性。"
-# ----------------------------------------------------------------------
-
 # -------------------------- 新增：代码分析配置 --------------------------
 def extract_code_between_markers(code_content, start_marker="#***start***#", end_marker="#***end***#"):
     """

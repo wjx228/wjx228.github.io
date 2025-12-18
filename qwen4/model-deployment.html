@@ -298,7 +298,7 @@
         // 动态获取当前页面的协议、IP/域名、端口
         const currentOrigin = window.location.origin; 
         // 拼接Ollama API地址
-        const OLLAMA_API = currentOrigin.replace(':5000', ':11435') + '/api/chat';
+        const OLLAMA_API = currentOrigin + '/api/chat';
         // 代码分析器页面地址
         const CODE_ANALYZER_URL = currentOrigin.replace(':5000', ':5000') + '/code_analysis.html';
         // 自动分析仪表盘页面地址
