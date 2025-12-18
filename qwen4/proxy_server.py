@@ -246,7 +246,7 @@ def get_local_ip():
         return "127.0.0.1"
 
 LOCAL_IP = get_local_ip()
-OLLAMA_API_URL = f"http://{LOCAL_IP}:11435/api/chat"
+OLLAMA_API_URL = f"http://{LOCAL_IP}:11434/api/chat"
 
 # -------------------------- 新增：代码分析函数 --------------------------
 def analyze_code(code, analysis_type="explain", context=None):
