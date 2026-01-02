@@ -57,13 +57,17 @@ def check_win(board: list[list[str]], x: int, y: int, player: str) -> bool:
         if count >= 5:
             return True
     return False
+
 #***start***#
+
 def is_board_full(board: list[list[str]]) -> bool:
     for row in board:
         if '-' in row:
             return False
     return True
+
 #***end***#
+
 def gobang_game(row: int = 15, col: int = 15) -> None:
     print("=" * 30)
     print("五子棋游戏")
